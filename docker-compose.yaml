@@ -1,0 +1,11 @@
+services:
+  client:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8091:8091"
+networks:
+  default:
+    name: restaurant
+    external: true
