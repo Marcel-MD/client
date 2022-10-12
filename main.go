@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"io"
 	"os"
+	"sync/atomic"
+	"time"
 
 	"github.com/Marcel-MD/client/domain"
 	"github.com/rs/zerolog"
@@ -14,9 +16,14 @@ func main() {
 	cfg := config()
 	domain.SetConfig(cfg)
 
-	for i := 0; i < cfg.NrOfClients; i++ {
-		client := domain.NewClient()
-		go client.Run()
+	for {
+		if int(atomic.LoadInt64(&domain.NrOfClients)) < cfg.NrOfClients {
+			client := domain.NewClient()
+			atomic.AddInt64(&domain.NrOfClients, 1)
+			go client.Run()
+		} else {
+			time.Sleep(time.Duration(100*cfg.TimeUnit) * time.Millisecond)
+		}
 	}
 }
 

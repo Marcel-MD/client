@@ -3,8 +3,11 @@ package domain
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
+	"io/ioutil"
 	"math/rand"
 	"net/http"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -16,6 +19,8 @@ type Client struct {
 	Menu          Menu
 	OrderResponse OrderResponse
 }
+
+var NrOfClients int64
 
 var clientId int64
 
@@ -67,7 +72,53 @@ func NewClient() *Client {
 }
 
 func (c *Client) Run() {
-	log.Debug().Int64("client_id", c.Id).Msg("Client started")
+	log.Info().Int64("client_id", c.Id).Msg("Client waits for order")
+
+	var wg sync.WaitGroup
+
+	for _, order := range c.OrderResponse.Orders {
+		wg.Add(1)
+		go c.waitForOrder(order, &wg)
+	}
+
+	wg.Wait()
+
+	log.Info().Int64("client_id", c.Id).Msg("Client picked up all orders")
+	atomic.AddInt64(&NrOfClients, -1)
+}
+
+func (c *Client) waitForOrder(order OrderResponseData, wg *sync.WaitGroup) {
+	log.Debug().Int64("client_id", c.Id).Int("order_id", order.OrderId).Msg("Client waits for order")
+
+	time.Sleep(time.Duration(order.EstimatedWait*float64(cfg.TimeUnit)) * time.Millisecond)
+
+	isOrderPickedUp := false
+
+	for !isOrderPickedUp {
+		r, err := http.Get(order.RestaurantAddress + "/v2/order/" + fmt.Sprintf("%d", order.OrderId))
+		if err != nil {
+			log.Warn().Int64("client_id", c.Id).Int64("order_id", int64(order.OrderId)).Err(err).Msg("Order not ready")
+			time.Sleep(time.Duration(15*cfg.TimeUnit) * time.Millisecond)
+			continue
+		}
+
+		body, err := ioutil.ReadAll(r.Body)
+		if err != nil {
+			log.Fatal().Err(err).Msg("Error reading body")
+		}
+		log.Debug().Int64("client_id", c.Id).Int64("order_id", int64(order.OrderId)).Msg(string(body))
+
+		// var distribution Distribution
+		// err = json.NewDecoder(r.Body).Decode(&distribution)
+		// if err != nil {
+		// 	log.Fatal().Err(err).Msg("Error decoding order status")
+		// }
+
+		log.Info().Int64("client_id", c.Id).Int64("order_id", int64(order.OrderId)).Msg("Order picked up")
+		isOrderPickedUp = true
+	}
+
+	wg.Done()
 }
 
 func (c *Client) generateOrder() Order {
