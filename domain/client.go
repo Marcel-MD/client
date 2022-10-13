@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"math/rand"
 	"net/http"
 	"sync"
@@ -88,8 +87,6 @@ func (c *Client) Run() {
 }
 
 func (c *Client) waitForOrder(order OrderResponseData, wg *sync.WaitGroup) {
-	log.Debug().Int64("client_id", c.Id).Int("order_id", order.OrderId).Msg("Client waits for order")
-
 	time.Sleep(time.Duration(order.EstimatedWait*float64(cfg.TimeUnit)) * time.Millisecond)
 
 	isOrderPickedUp := false
@@ -97,25 +94,22 @@ func (c *Client) waitForOrder(order OrderResponseData, wg *sync.WaitGroup) {
 	for !isOrderPickedUp {
 		r, err := http.Get(order.RestaurantAddress + "/v2/order/" + fmt.Sprintf("%d", order.OrderId))
 		if err != nil {
-			log.Warn().Int64("client_id", c.Id).Int64("order_id", int64(order.OrderId)).Err(err).Msg("Order not ready")
-			time.Sleep(time.Duration(15*cfg.TimeUnit) * time.Millisecond)
-			continue
+			log.Fatal().Err(err).Msg("Error getting distribution from restaurant")
 		}
 
-		body, err := ioutil.ReadAll(r.Body)
+		var distribution DistributionResponse
+		err = json.NewDecoder(r.Body).Decode(&distribution)
 		if err != nil {
-			log.Fatal().Err(err).Msg("Error reading body")
+			log.Fatal().Err(err).Msg("Error decoding distribution")
 		}
-		log.Debug().Int64("client_id", c.Id).Int64("order_id", int64(order.OrderId)).Msg(string(body))
 
-		// var distribution Distribution
-		// err = json.NewDecoder(r.Body).Decode(&distribution)
-		// if err != nil {
-		// 	log.Fatal().Err(err).Msg("Error decoding order status")
-		// }
-
-		log.Info().Int64("client_id", c.Id).Int64("order_id", int64(order.OrderId)).Msg("Order picked up")
-		isOrderPickedUp = true
+		if distribution.IsReady {
+			log.Info().Int64("client_id", c.Id).Int("order_id", order.OrderId).Msg("Client picked up order")
+			isOrderPickedUp = true
+		} else {
+			log.Debug().Int64("client_id", c.Id).Int("order_id", order.OrderId).Msg("Order not ready yet")
+			time.Sleep(time.Duration(15*cfg.TimeUnit) * time.Millisecond)
+		}
 	}
 
 	wg.Done()
