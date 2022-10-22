@@ -17,6 +17,7 @@ type Client struct {
 	Id            int64 `json:"id"`
 	Menu          Menu
 	OrderResponse OrderResponse
+	Rating        Rating
 }
 
 var NrOfClients int64
@@ -67,6 +68,12 @@ func NewClient() *Client {
 
 	log.Debug().Int64("client_id", c.Id).Msg("Client sent order to food ordering")
 
+	c.Rating = Rating{
+		ClientId: c.Id,
+		OrderId:  order.OrderId,
+		Orders:   make([]OrderRating, 0),
+	}
+
 	return c
 }
 
@@ -82,6 +89,17 @@ func (c *Client) Run() {
 
 	wg.Wait()
 
+	jsonBody, err := json.Marshal(c.Rating)
+	if err != nil {
+		log.Fatal().Err(err).Msg("Error marshalling rating")
+	}
+	contentType := "application/json"
+
+	_, err = http.Post(cfg.FoodOrderingUrl+"/rating", contentType, bytes.NewReader(jsonBody))
+	if err != nil {
+		log.Fatal().Err(err).Msg("Error sending rating to restaurant")
+	}
+
 	log.Info().Int64("client_id", c.Id).Msg("Client picked up all orders")
 	atomic.AddInt64(&NrOfClients, -1)
 }
@@ -90,6 +108,7 @@ func (c *Client) waitForOrder(order OrderResponseData, wg *sync.WaitGroup) {
 	time.Sleep(time.Duration(order.EstimatedWait*float64(cfg.TimeUnit)) * time.Millisecond)
 
 	isOrderPickedUp := false
+	var distribution DistributionResponse
 
 	for !isOrderPickedUp {
 		r, err := http.Get(order.RestaurantAddress + "/v2/order/" + fmt.Sprintf("%d", order.OrderId))
@@ -97,7 +116,6 @@ func (c *Client) waitForOrder(order OrderResponseData, wg *sync.WaitGroup) {
 			log.Fatal().Err(err).Msg("Error getting distribution from restaurant")
 		}
 
-		var distribution DistributionResponse
 		err = json.NewDecoder(r.Body).Decode(&distribution)
 		if err != nil {
 			log.Fatal().Err(err).Msg("Error decoding distribution")
@@ -108,9 +126,17 @@ func (c *Client) waitForOrder(order OrderResponseData, wg *sync.WaitGroup) {
 			isOrderPickedUp = true
 		} else {
 			log.Debug().Int64("client_id", c.Id).Int("order_id", order.OrderId).Msg("Order not ready yet")
-			time.Sleep(time.Duration(15*cfg.TimeUnit) * time.Millisecond)
+			time.Sleep(time.Duration(cfg.ClientAdditionalWait*cfg.TimeUnit) * time.Millisecond)
 		}
 	}
+
+	orderRating := OrderRating{
+		OrderId:      order.OrderId,
+		RestaurantId: order.RestaurantId,
+		Rating:       distribution.CalculateRating(),
+	}
+
+	c.Rating.Orders = append(c.Rating.Orders, orderRating)
 
 	wg.Done()
 }
@@ -121,9 +147,22 @@ func (c *Client) generateOrder() Order {
 		Orders:   make([]OrderData, 0),
 	}
 
-	for _, restaurantData := range c.Menu.RestaurantsData {
+	for i, restaurantData := range c.Menu.RestaurantsData {
+
+		if rand.Intn(2) == 0 {
+			if len(order.Orders) != 0 || i != len(c.Menu.RestaurantsData)-1 {
+				continue
+			}
+		}
 
 		foodCount := rand.Intn(cfg.MaxOrderItemsCount) + 1
+		for i := 0; i < 3; i++ {
+			if foodCount > 5 {
+				foodCount = rand.Intn(cfg.MaxOrderItemsCount) + 1
+			} else {
+				break
+			}
+		}
 
 		orderData := OrderData{
 			RestaurantId: restaurantData.RestaurantId,

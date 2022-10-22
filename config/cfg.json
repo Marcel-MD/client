@@ -1,8 +1,9 @@
 {
   "time_unit": 250,
   "nr_of_clients": 5,
-  "max_order_items_count": 5,
+  "max_order_items_count": 10,
   "max_wait_time_coefficient": 1.8,
   "food_ordering_url": "http://food-ordering:8090",
-  "client_port": "8091"
+  "client_port": "8091",
+  "client_additional_wait": 10
 }

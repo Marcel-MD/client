@@ -9,6 +9,8 @@ type Config struct {
 
 	FoodOrderingUrl string `json:"food_ordering_url"`
 	ClientPort      string `json:"client_port"`
+
+	ClientAdditionalWait int `json:"client_additional_wait"`
 }
 
 var cfg Config = Config{
@@ -16,9 +18,11 @@ var cfg Config = Config{
 	NrOfClients: 5,
 
 	MaxOrderItemsCount:     5,
-	MaxWaitTimeCoefficient: 1.3,
+	MaxWaitTimeCoefficient: 1.8,
 	FoodOrderingUrl:        "http://food-ordering:8090",
 	ClientPort:             "8091",
+
+	ClientAdditionalWait: 10,
 }
 
 func SetConfig(c Config) {
